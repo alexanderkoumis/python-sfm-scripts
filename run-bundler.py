@@ -16,8 +16,8 @@ def binary_name(bin_dir, bin_name):
 
 def make_bins(bin_dir):
     bins = {}
-    bin_names = ['sift', 'bundler', 'Bundle2Vis', 'KeyMatchFull',
-                 'RadialUndistort']
+    bin_names = ['sift',  'KeyMatchFull', 'bundler', 'Bundle2Vis',
+                 'Bundle2PMVS', 'RadialUndistort']
     for bin_name in bin_names:
         bins[bin_name] = os.path.join(bin_dir, bin_name)
     return bins
@@ -30,7 +30,7 @@ def make_out_dirs(out_dir):
                       'Overwrite? (\'n\' will halt script) [y]/n: '
         while True:
             user_input = raw_input(warning_str).lower()
-            if user_input == 'y':
+            if user_input == 'y' || user_input == '':
                 shutil.rmtree(out_dir)
                 break
             elif user_input == 'n':
@@ -76,7 +76,7 @@ def prepare_imgs(src_list, dst_list, out_img_dir, out_matches_dir):
     img_list_file.close
     return dst_imgs
 
-def calc_sift(sift_bin, key_list, out_imgs):
+def run_sift(sift_bin, key_list, out_imgs):
     key_list_file = open(key_list, 'w')
     for out_img in out_imgs:
         out_img_pgm = out_img['pgm']
@@ -88,12 +88,12 @@ def calc_sift(sift_bin, key_list, out_imgs):
     key_list_file.close()
     return key_list
 
-def calc_matches(keymatch_bin, matches, key_list):
+def run_keymatcher(keymatch_bin, matches, key_list):
     keymatch_cmd = keymatch_bin + ' ' + key_list + ' ' + matches
     subprocess.check_call(keymatch_cmd, shell=True)
     print 'Wrote matches to ' + matches
 
-def calc_bundler(bundler_bin, dst_img_list, matches, bundle_dir):
+def run_bundler(bundler_bin, dst_img_list, matches, bundle_dir):
     bundler_cmd = ' '.join([
         bundler_bin, dst_img_list, '--match_table', matches, '--output',
         'bundle.out', '--output_dir', bundle_dir, '--init_focal_length',
@@ -104,6 +104,21 @@ def calc_bundler(bundler_bin, dst_img_list, matches, bundle_dir):
     subprocess.check_call(bundler_cmd, shell=True)
     os.chdir(orig_wd)
 
+def export_bundler(bins, img_list, out_dir, out_dirs):
+    bundle_out = os.path.join(out_dirs['bundle'], 'bundle.out')
+    bundle_rd_out = os.path.join(out_dirs['pmvs'], 'bundle.rd.out')
+    vis_dat = os.path.join(out_dirs['pmvs'], 'vis.dat')
+
+    shared_args = img_list + ' ' + bundle_out + ' pmvs/'
+    bundle2pmvs_cmd = bins['Bundle2PMVS'] + ' ' + shared_args
+    radialundistort_cmd = bins['RadialUndistort'] + ' ' + shared_args
+    bundle2vis_cmd = bins['Bundle2Vis'] + ' ' + bundle_rd_out + ' ' + vis_dat
+    
+    os.chdir(out_dir)
+
+    subprocess.check_call(bundle2pmvs_cmd, shell=True)
+    subprocess.check_call(radialundistort_cmd, shell=True)
+    subprocess.check_call(bundle2vis_cmd, shell=True)
 
 def main():
 
@@ -122,9 +137,10 @@ def main():
     out_imgs = prepare_imgs(src_img_list, dst_img_list, out_dirs['images'],
                             out_dirs['matches'])
 
-    calc_sift(bins['sift'], key_list, out_imgs)
-    calc_matches(bins['KeyMatchFull'], matches, key_list)
-    calc_bundler(bins['bundler'], dst_img_list, matches, out_dirs['bundle'])
+    run_sift(bins['sift'], key_list, out_imgs)
+    run_keymatcher(bins['KeyMatchFull'], matches, key_list)
+    run_bundler(bins['bundler'], dst_img_list, matches, out_dirs['bundle'])
+    export_bundler(bins, dst_img_list, out_dir, out_dirs)
 
 #    convert_jpg_to_pgm(img_list)
 
