@@ -2,7 +2,7 @@
 # python ./run-bundler.py <path_to_binaries> <path_to_dataset> <output_path>
 
 import sys        # argv
-import os         # getcwd, chdir, path.join, path.isfile
+import os         # getcwd, chdir, rename, path.join, path.isfile
 import shutil     # copy, rmtree
 import subprocess # check_call
 
@@ -17,7 +17,7 @@ def binary_name(bin_dir, bin_name):
 def make_bins(bin_dir):
     bins = {}
     bin_names = ['sift',  'KeyMatchFull', 'bundler', 'Bundle2Vis',
-                 'Bundle2PMVS', 'RadialUndistort']
+                 'Bundle2PMVS', 'RadialUndistort', 'cmvs', 'genOption', 'pmvs2']
     for bin_name in bin_names:
         bins[bin_name] = os.path.join(bin_dir, bin_name)
     return bins
@@ -25,21 +25,30 @@ def make_bins(bin_dir):
 def make_out_dirs(out_dir):
     out_dirs = {}
     out_subdirs = ['images', 'matches', 'bundle', 'pmvs']
+    out_pmvs_subdirs = ['visualize', 'txt', 'models']
+
     if os.path.isdir(out_dir):
         warning_str = 'Warning! ' + out_dir + ' is already a directory! ' + \
                       'Overwrite? (\'n\' will halt script) [y]/n: '
         while True:
             user_input = raw_input(warning_str).lower()
-            if user_input == 'y' || user_input == '':
+            if user_input == 'y' or user_input == '':
                 shutil.rmtree(out_dir)
                 break
             elif user_input == 'n':
                 exit(0)
+    
     os.makedirs(out_dir)
     for out_subdir in out_subdirs:
         full_out_dir = os.path.join(out_dir, out_subdir)
         out_dirs[out_subdir] = full_out_dir
         os.makedirs(full_out_dir)
+    
+    out_pmvs_dir = out_dirs['pmvs']
+    for out_pmvs_subdir in out_pmvs_subdirs:
+        full_out_pmvs_subdir = os.path.join(out_pmvs_dir, out_pmvs_subdir)
+        out_dirs[out_pmvs_subdir] = full_out_pmvs_subdir
+        os.makedirs(full_out_pmvs_subdir)
     return out_dirs
 
 def make_src_img_list(img_dir):
@@ -104,21 +113,48 @@ def run_bundler(bundler_bin, dst_img_list, matches, bundle_dir):
     subprocess.check_call(bundler_cmd, shell=True)
     os.chdir(orig_wd)
 
-def export_bundler(bins, img_list, out_dir, out_dirs):
-    bundle_out = os.path.join(out_dirs['bundle'], 'bundle.out')
-    bundle_rd_out = os.path.join(out_dirs['pmvs'], 'bundle.rd.out')
-    vis_dat = os.path.join(out_dirs['pmvs'], 'vis.dat')
+def move_imgs_txts(pmvs_dir, out_dirs):
+    n = 0
+    for src_img in os.listdir(pmvs_dir):
+        if src_img.endswith('.jpg'):
+            dst_prefix = str(str(n).zfill(8))
+            dst_img = dst_prefix + '.jpg'
+            src_dst_txt = dst_prefix + '.txt'
+            full_src_img = os.path.join(pmvs_dir, src_img)
+            full_src_txt = os.path.join(pmvs_dir, src_dst_txt)
+            full_dst_img = os.path.join(out_dirs['visualize'], dst_img)
+            full_dst_txt = os.path.join(out_dirs['txt'], src_dst_txt)
+            os.rename(full_src_img, full_dst_img)
+            os.rename(full_src_txt, full_dst_txt)
+            n += 1
 
+def export_bundler(bins, img_list, out_dir, out_dirs):
+    pmvs_dir = out_dirs['pmvs']
+    bundle_out = os.path.join(out_dirs['bundle'], 'bundle.out')
+    bundle_rd_out = os.path.join(pmvs_dir, 'bundle.rd.out')
+    vis_dat = os.path.join(pmvs_dir, 'vis.dat')
+    
     shared_args = img_list + ' ' + bundle_out + ' pmvs/'
     bundle2pmvs_cmd = bins['Bundle2PMVS'] + ' ' + shared_args
     radialundistort_cmd = bins['RadialUndistort'] + ' ' + shared_args
+    bundle2vis_cmd = bins['Bundle2Vis'] + ' ' + bundle_out + ' ' + vis_dat
     bundle2vis_cmd = bins['Bundle2Vis'] + ' ' + bundle_rd_out + ' ' + vis_dat
-    
-    os.chdir(out_dir)
 
+    os.chdir(out_dir)
+    print 'bundle2pmvs cmd:' + bundle2pmvs_cmd
     subprocess.check_call(bundle2pmvs_cmd, shell=True)
     subprocess.check_call(radialundistort_cmd, shell=True)
+    move_imgs_txts(pmvs_dir, out_dirs)
     subprocess.check_call(bundle2vis_cmd, shell=True)
+
+def run_cmvs_pmvs(bins, pmvs_dir):
+    pmvs_dir_slash = pmvs_dir + '/' # HEY MAN CMVS DOES THE PARSING NOT ME!
+    cmvs_cmd = bins['cmvs'] + ' ' + pmvs_dir_slash
+    genoption_cmd = bins['genOption'] + ' ' + pmvs_dir_slash + ' 1 2 0.7 8 3 2'
+    pmvs_cmd = bins['pmvs2'] + ' ' + pmvs_dir_slash + ' pmvs_options.txt'
+    subprocess.check_call(cmvs_cmd, shell=True)
+    subprocess.check_call(genoption_cmd, shell=True)
+    subprocess.check_call(pmvs_cmd, shell=True)
 
 def main():
 
@@ -141,12 +177,8 @@ def main():
     run_keymatcher(bins['KeyMatchFull'], matches, key_list)
     run_bundler(bins['bundler'], dst_img_list, matches, out_dirs['bundle'])
     export_bundler(bins, dst_img_list, out_dir, out_dirs)
+    run_cmvs_pmvs(bins, out_dirs['pmvs'])
 
-#    convert_jpg_to_pgm(img_list)
-
-    # bundler_cmd = ' '.join([bundler, list_txt, '--match_table', matches_f_txt, '--output', bundle_out, "--output_dir", bundle_dir, '--init_focal_length', str(1400), '--variable_focal_length', '--run_bundle'])
-
-    # subprocess.check_call(bundler_cmd, shell=True)
 
 
 if __name__ == "__main__":
