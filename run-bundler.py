@@ -99,13 +99,14 @@ def run_sift(sift_bin, key_list, out_imgs):
 
 def run_keymatcher(keymatch_bin, matches, key_list):
     keymatch_cmd = keymatch_bin + ' ' + key_list + ' ' + matches
+    print keymatch_cmd
     subprocess.check_call(keymatch_cmd, shell=True)
     print 'Wrote matches to ' + matches
 
 def run_bundler(bundler_bin, dst_img_list, matches, bundle_dir):
     bundler_cmd = ' '.join([
         bundler_bin, dst_img_list, '--match_table', matches, '--output',
-        'bundle.out', '--output_dir', bundle_dir, '--init_focal_length',
+        'bundle.out', '--output_dir', bundle_dir, '--output_all bundle_', '--init_focal_length',
         str(1400), '--variable_focal_length', '--run_bundle'
     ])
     orig_wd = os.getcwd()
